@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+NODE_EXEC="${NODE_BIN:-$(command -v node)}"
+if [ -z "$NODE_EXEC" ]; then
+  echo '{"error":"node executable not found in NODE_BIN or PATH"}' >&2
+  exit 1
+fi
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec "$NODE_EXEC" "$SCRIPT_DIR/../server/index.mjs" "$@"

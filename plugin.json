@@ -1,0 +1,17 @@
+{
+  "name": "codex-bridge",
+  "displayName": "Codex App Bridge",
+  "version": "0.2.0",
+  "description": "Stateful JSON-RPC 2.0 bridge between Antigravity and Codex App Server: inspect/fork/organize persisted Codex Desktop threads without session lock conflicts, forward interactive approvals, and invoke Codex macOS Computer Use.",
+  "author": {
+    "name": "JLA97",
+    "url": "https://github.com/JLA97"
+  },
+  "repository": "https://github.com/JLA97/codex-bridge",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "检查本机 Codex App Server 与 Computer Use 插件就绪状态",
+    "列出我最近在 Codex App 里的活跃会话并读取最新一条的进展",
+    "从 Codex 最新会话分叉一条新线程执行任务，遇到权限审批交给我确认"
+  ]
+}

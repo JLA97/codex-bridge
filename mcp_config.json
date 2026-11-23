@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "app-server": {
+      "command": "/bin/sh",
+      "args": [
+        "${PLUGIN_ROOT}/scripts/codex-bridge-mcp",
+        "--mcp"
+      ]
+    }
+  }
+}
