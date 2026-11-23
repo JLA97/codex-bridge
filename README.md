@@ -115,6 +115,13 @@ node --test scripts/self-test.mjs
 agy plugin validate --strict .
 ```
 
+---
+
+## Acknowledgements / 致谢
+
+- 感谢 **[LINUX DO](https://linux.do/)** 社区在多 Agent 协同工作流、工程实践与日常交流中带来的诸多启发与讨论。
+- Built on top of the open [Codex App Server](https://github.com/openai/codex) protocol and the [Google Antigravity](https://antigravity.google/docs/plugins) plugin ecosystem.
+
 ## License
 
 [MIT](./LICENSE)
