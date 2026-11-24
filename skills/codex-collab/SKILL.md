@@ -1,6 +1,6 @@
 ---
 name: codex-collab
-description: Orchestrate stateful collaboration with the local Codex App (`codex app-server`) from Antigravity. Use when delegating tasks to Codex, reading or forking persisted Codex Desktop threads without lock conflicts, running Codex's native code reviewer, organizing Codex Desktop sidebar sections, or driving macOS desktop/simulator apps via Codex Computer Use.
+description: Orchestrate stateful collaboration with the local Codex App (`codex app-server`) from Antigravity. Use when delegating tasks to Codex, offering or running a cross-model code review after non-trivial code changes, reading or forking persisted Codex Desktop threads without lock conflicts, organizing Codex Desktop sidebar sections, or driving macOS desktop/simulator apps via Codex Computer Use.
 ---
 
 # Codex App Bridge (`codex-collab`)
@@ -30,6 +30,18 @@ Always prefer the persistent **`codex-bridge_app-server`** MCP server tools (`co
 5. **Isolate Parallel Edits & Multi-Turn Loops**
    - In Git repositories, pass a dedicated `git worktree` path as `cwd` when running parallel edits.
    - Delegate multi-round polling or approval workflows to the `codex-delegate` subagent to keep the main chat concise.
+
+## Cross-Model Code Review (Proactive Offer & Triage)
+
+- **When to Offer (Restrained by Default)**:
+  - After completing a **non-trivial change** (e.g., multi-file edits, core logic/state transitions, concurrency, protocol/API boundaries, auth/security, or risky refactors), proactively offer to run a read-only cross-model review via `codex_review_start` rather than invoking it silently (unless the user already asked for a Codex review).
+  - Do **not** offer a Codex review for trivial edits (typos, docs-only tweaks, minor config updates, or straightforward one-liners).
+- **Triage Findings Critically — Avoid Over-Defense & Scope Creep**:
+  - Codex's reviewer can be overly defensive (flagging speculative edge cases, redundant guards already covered by invariants, or unrelated cleanups). Never apply its findings blindly.
+  - Verify each finding independently against the actual code, call sites, and invariants:
+    - **Fix real, in-scope defects**: confirmed bugs, race conditions, broken contracts, data-loss risks, security issues, or crashes on realistic inputs.
+    - **Skip over-defensive noise**: impossible states, hypothetical "what-if" checks, redundant defensive boilerplate, style nits, or refactors that expand the change scope unnecessarily.
+  - When reporting back to the user, clearly distinguish **verified issues fixed (or worth fixing)** from **dismissed over-defensive / out-of-scope findings** with a brief reason.
 
 ## Tool Quick Reference
 
