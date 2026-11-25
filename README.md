@@ -39,7 +39,8 @@ agy plugin install /path/to/codex-bridge
 
 This single bundle registers:
 - **MCP Server** (`codex-bridge_app-server`): 10 `codex_*` tools managed automatically on demand.
-- **Skill** (`codex-collab`): Workflow rules for lock-free reading/forking, 45s polling loops, approval handling, and Computer Use.
+- **Rules** (`rules/AGENTS.md`): Lightweight always-on triggers for offering cross-model review, second-opinion diagnosis, and design consultation.
+- **Skill** (`codex-collab`): Workflow rules for lock-free reading/forking, 45s polling loops, approval handling, multi-round review/diagnosis/design collaboration, and Computer Use.
 - **Subagent** (`codex-delegate`): Dedicated background coordinator to keep verbose multi-turn polling out of the main chat.
 
 ### 2. Other MCP Hosts (Claude Code / Cursor / Generic MCP)
@@ -89,8 +90,10 @@ codex-bridge/
 │   ├── app-server-client.mjs    # Stateful JSON-RPC 2.0 client & approval/turn state machine
 │   ├── tools.mjs                # Tool schemas, input validation & handlers
 │   └── index.mjs                # MCP stdio server + stateless one-shot CLI
+├── rules/
+│   └── AGENTS.md                # Always-on triggers for proactive collaboration offers
 ├── skills/
-│   └── codex-collab/SKILL.md    # Collaboration workflow instructions
+│   └── codex-collab/SKILL.md    # Collaboration workflow & triage instructions
 ├── agents/
 │   └── codex-delegate.md        # Context-isolating coordinator subagent
 └── assets/

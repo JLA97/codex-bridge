@@ -1,6 +1,6 @@
 ---
 name: codex-collab
-description: Orchestrate stateful collaboration with the local Codex App (`codex app-server`) from Antigravity. Use when delegating tasks to Codex, offering or running a cross-model code review after non-trivial code changes, reading or forking persisted Codex Desktop threads without lock conflicts, organizing Codex Desktop sidebar sections, or driving macOS desktop/simulator apps via Codex Computer Use.
+description: Orchestrate stateful collaboration with the local Codex App (`codex app-server`) from Antigravity. Use when delegating tasks to Codex, running cross-model code reviews, second-opinion bug diagnosis, or design consultations, reading or forking persisted Codex Desktop threads without lock conflicts, organizing Codex Desktop sidebar sections, or driving macOS desktop/simulator apps via Codex Computer Use.
 ---
 
 # Codex App Bridge (`codex-collab`)
@@ -31,17 +31,23 @@ Always prefer the persistent **`codex-bridge_app-server`** MCP server tools (`co
    - In Git repositories, pass a dedicated `git worktree` path as `cwd` when running parallel edits.
    - Delegate multi-round polling or approval workflows to the `codex-delegate` subagent to keep the main chat concise.
 
-## Cross-Model Code Review (Proactive Offer & Triage)
+## Collaboration Playbook
 
-- **When to Offer (Restrained by Default)**:
-  - After completing a **non-trivial change** (e.g., multi-file edits, core logic/state transitions, concurrency, protocol/API boundaries, auth/security, or risky refactors), proactively offer to run a read-only cross-model review via `codex_review_start` rather than invoking it silently (unless the user already asked for a Codex review).
-  - Do **not** offer a Codex review for trivial edits (typos, docs-only tweaks, minor config updates, or straightforward one-liners).
-- **Triage Findings Critically — Avoid Over-Defense & Scope Creep**:
-  - Codex's reviewer can be overly defensive (flagging speculative edge cases, redundant guards already covered by invariants, or unrelated cleanups). Never apply its findings blindly.
-  - Verify each finding independently against the actual code, call sites, and invariants:
-    - **Fix real, in-scope defects**: confirmed bugs, race conditions, broken contracts, data-loss risks, security issues, or crashes on realistic inputs.
-    - **Skip over-defensive noise**: impossible states, hypothetical "what-if" checks, redundant defensive boilerplate, style nits, or refactors that expand the change scope unnecessarily.
-  - When reporting back to the user, clearly distinguish **verified issues fixed (or worth fixing)** from **dismissed over-defensive / out-of-scope findings** with a brief reason.
+- **Start Read-Only for Advisory Work, Escalate When Needed**:
+  - For code reviews, diagnosis, and design consultations, always pass the target repo's absolute `cwd` and default to read-only (`codex_review_start`, or `codex_turn_send` with `sandbox: "read-only"`, `approvalPolicy: "never"`, `approvalHandling: "decline"`).
+  - Treat read-only as a sensible default, not a straitjacket: if a reproduction test needs temporary writes, either run it locally and feed observed results back to Codex, or use `workspace-write` + `approvalHandling: "defer"` when the user wants Codex to run tests or make edits. Feel free to delegate standalone coding tasks, refactors, or adversarial edge-case test generation when Codex is a good fit.
+- **Reasoning Depth (`high` / `xhigh`)**:
+  - Prioritize rigor over speed: default to `effort: "high"` on `codex_turn_send`, and use `"xhigh"` for stubborn bugs, concurrency/security issues, or high-stakes architectural trade-offs. (`codex_review_start` uses Codex's native reviewer config.)
+- **Stateful Multi-Round (`mode: "resume"`) & Practical Pitfalls**:
+  - Keep `ephemeral: false` (default) on any thread you may continue — `ephemeral: true` drops on auto-unsubscribe and fails `thread/resume` (`no rollout found`). Optionally archive finished threads via `codex_thread_organize({ threadId, archive: true })` to keep `Codex.app`'s sidebar tidy.
+  - When resuming a completed read-only thread, pass `approvalHandling: "decline"` (`sandbox`/`approvalPolicy` inherit from the thread, while `approvalHandling` resets to `"defer"` per turn) and send only incremental evidence or focused counter-arguments rather than re-dumping full context.
+  - Let the problem dictate rounds: stop after 1 round if already conclusive; use 2–3 rounds as a practical convergence guardrail for iterative diagnosis or design debates, then present consensus plus any unresolved trade-offs (your stance vs. Codex's stance) to the user.
+- **Direct Call vs. Async `codex-delegate`**:
+  - Use `codex-delegate` (`invoke_subagent`) for **non-blocking background runs** (e.g., `codex_review_start` or long `high`/`xhigh` turns while the main agent works on unrelated tasks or keeps verbose polling out of the main chat); for read-only delegation, specify in the prompt whether local edits and approval escalations are disallowed.
+  - Call `codex_turn_send` directly from the main agent when you need high-fidelity nuance in tight back-and-forth design discussions where subagent summarization would lose detail. Avoid firing other `codex_*` calls concurrently with a blocking `codex_turn_status` wait (some MCP hosts serialize calls per server).
+- **Triage Critically — No Over-Defense or Scope Creep**:
+  - Verify Codex's findings independently against actual code, call sites, and invariants. Adopt real, in-scope defects and dismiss speculative edge cases, redundant guards, or unrelated refactors (briefly noting what was skipped and why).
+  - Respect task scope: if reviewing your own authorized implementation, fix verified in-scope defects directly; if the user requested a standalone review only, report findings first and ask before editing.
 
 ## Tool Quick Reference
 
