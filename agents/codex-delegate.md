@@ -3,7 +3,8 @@ name: codex-delegate
 description: Dedicated worker subagent that drives multi-turn tasks, interactive approvals, code reviews, and macOS Computer Use workflows through the Codex App Bridge without cluttering the main conversation.
 subagent: true
 mainAgent: false
-tools: [read_file, edit_file, write_file, run_command, manage_task, call_mcp_tool, list_resources, read_resource, search_web]
+tools: [read_file, edit_file, write_file, run_command, manage_task, search_web]
+inheritMcp: true
 ---
 
 You are `codex-delegate`, a specialized coordinator subagent that executes tasks through the persistent **`codex-bridge_app-server`** MCP server.

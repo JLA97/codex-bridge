@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 
 const MAX_RETAINED_TERMINAL_TURNS = 50;
@@ -9,27 +10,81 @@ const DEFAULT_WAIT_TIMEOUT_MS = 45_000;
 const VALID_DECISIONS = new Set(["accept", "acceptForSession", "decline", "cancel"]);
 const HUMAN_COMMAND_DECISIONS = new Set(["accept", "decline", "cancel"]);
 
-function resolveCodexBinary(explicitBin) {
+function findWindowsCodexFromPath() {
+  const pathDirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  for (const dir of pathDirs) {
+    const exePath = path.join(dir, "codex.exe");
+    if (existsSync(exePath)) {
+      return exePath;
+    }
+    const cmdPath = path.join(dir, "codex.cmd");
+    if (existsSync(cmdPath)) {
+      const siblingJs = path.join(dir, "node_modules", "@openai", "codex", "bin", "codex.js");
+      return existsSync(siblingJs) ? siblingJs : cmdPath;
+    }
+  }
+  return null;
+}
+
+function resolveCodexSpawnSpec(explicitBin, extraArgs = []) {
   const envBin = explicitBin || process.env.CODEX_BIN;
+  const appServerArgs = ["app-server", "--stdio", ...extraArgs];
+  let bin = null;
+
   if (envBin) {
-    if (envBin.includes("/")) {
-      if (!existsSync(envBin)) {
-        throw new Error(`Configured CODEX_BIN path does not exist: ${envBin}`);
+    if (/[\\/]/.test(envBin) && !existsSync(envBin)) {
+      throw new Error(`Configured CODEX_BIN path does not exist: ${envBin}`);
+    }
+    bin = envBin;
+  } else if (process.platform === "win32") {
+    const npmCodexJs = process.env.APPDATA
+      ? path.join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
+      : null;
+    if (npmCodexJs && existsSync(npmCodexJs)) {
+      bin = npmCodexJs;
+    } else {
+      bin = findWindowsCodexFromPath() || "codex";
+    }
+  } else {
+    for (const candidate of ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]) {
+      if (existsSync(candidate)) {
+        bin = candidate;
+        break;
       }
-      return envBin;
     }
-    return envBin;
+    if (!bin) bin = "codex";
   }
-  for (const candidate of ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]) {
-    if (existsSync(candidate)) {
-      return candidate;
+
+  if (process.platform === "win32") {
+    const lower = bin.toLowerCase();
+    if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
+      return {
+        command: process.execPath,
+        args: [bin, ...appServerArgs],
+        displayBin: bin,
+      };
+    }
+    if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
+      return {
+        command: process.env.ComSpec || "cmd.exe",
+        args: ["/d", "/s", "/c", bin, ...appServerArgs],
+        displayBin: bin,
+      };
     }
   }
-  return "codex";
+
+  return {
+    command: bin,
+    args: appServerArgs,
+    displayBin: bin,
+  };
 }
 
 function buildChildEnv(extraEnv = {}) {
   const env = { ...process.env, ...extraEnv };
+  if (process.platform === "win32") {
+    return env;
+  }
   const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
   const currentParts = (env.PATH || "").split(":").filter(Boolean);
   for (const p of extraPaths.reverse()) {
@@ -343,16 +398,16 @@ export class CodexAppServerClient {
   }
 
   async _spawnAndInitialize() {
-    const codexBin = resolveCodexBinary(this.explicitCodexBin);
-    const args = ["app-server", "--stdio", ...this.extraArgs];
-    const child = spawn(codexBin, args, {
+    const spec = resolveCodexSpawnSpec(this.explicitCodexBin, this.extraArgs);
+    const child = spawn(spec.command, spec.args, {
       stdio: ["pipe", "pipe", "pipe"],
       env: buildChildEnv(this.extraEnv),
+      windowsHide: true,
     });
 
     const conn = {
       child,
-      codexBin,
+      codexBin: spec.displayBin,
       closed: false,
       serverInfo: null,
       pendingRequests: new Map(),
@@ -384,7 +439,10 @@ export class CodexAppServerClient {
     });
 
     child.on("error", (err) => {
-      this._teardownConnection(conn, new Error(`Failed to spawn ${codexBin}: ${err.message}`));
+      this._teardownConnection(
+        conn,
+        new Error(`Failed to spawn ${spec.displayBin}: ${err.message}`)
+      );
     });
 
     child.on("exit", (code, signal) => {
@@ -420,7 +478,7 @@ export class CodexAppServerClient {
       );
 
       this._writeJsonOnConn(conn, { jsonrpc: "2.0", method: "initialized" });
-      conn.serverInfo = { ...initResult, resolvedCodexBin: codexBin };
+      conn.serverInfo = { ...initResult, resolvedCodexBin: spec.displayBin };
       return conn.serverInfo;
     } catch (initErr) {
       this._killConnProcess(conn);

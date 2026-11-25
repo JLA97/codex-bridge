@@ -1,9 +1,9 @@
 {
   "mcpServers": {
     "app-server": {
-      "command": "/bin/sh",
+      "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/scripts/codex-bridge-mcp",
+        "${PLUGIN_ROOT}/server/index.mjs",
         "--mcp"
       ]
     }
