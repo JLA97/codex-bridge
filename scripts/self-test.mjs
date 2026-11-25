@@ -271,3 +271,104 @@ test("MCP protocol negotiation, split Content-Length framing, and CLI guardrails
     rmSync(codexHome, { recursive: true, force: true });
   }
 });
+
+test("Windows spawn spec resolution, PATH precedence, .cmd quoting, and env preservation", async () => {
+  const { resolveCodexSpawnSpec, buildChildEnv } = await import(
+    pathToFileURL(path.join(PLUGIN_DIR, "server", "app-server-client.mjs")).href
+  );
+
+  // 1. PATH takes precedence over APPDATA\npm fallback (e.g. nvm/scoop/native codex.exe)
+  {
+    const existing = new Set([
+      "C:\\Tools\\Codex\\codex.exe",
+      "C:\\Users\\Alice\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js",
+    ]);
+    const spec = resolveCodexSpawnSpec(null, [], {
+      platform: "win32",
+      env: {
+        PATH: '"C:\\Tools\\Codex";C:\\Users\\Alice\\AppData\\Roaming\\npm',
+        APPDATA: "C:\\Users\\Alice\\AppData\\Roaming",
+      },
+      existsSync: (p) => existing.has(p),
+      execPath: "C:\\Program Files\\nodejs\\node.exe",
+    });
+    assert.equal(spec.command, "C:\\Tools\\Codex\\codex.exe");
+    assert.deepEqual(spec.args, ["app-server", "--stdio"]);
+    assert.equal(spec.displayBin, "C:\\Tools\\Codex\\codex.exe");
+    assert.equal(spec.windowsVerbatimArguments, undefined);
+  }
+
+  // 2. npm codex.cmd on PATH resolves sibling codex.js and runs via node execPath
+  {
+    const npmDir = "C:\\Users\\Alice Smith\\AppData\\Roaming\\npm";
+    const cmdPath = `${npmDir}\\codex.cmd`;
+    const jsPath = `${npmDir}\\node_modules\\@openai\\codex\\bin\\codex.js`;
+    const existing = new Set([cmdPath, jsPath]);
+    const spec = resolveCodexSpawnSpec(null, [], {
+      platform: "win32",
+      env: { PATH: npmDir, APPDATA: "C:\\Users\\Alice Smith\\AppData\\Roaming" },
+      existsSync: (p) => existing.has(p),
+      execPath: "C:\\Program Files\\nodejs\\node.exe",
+    });
+    assert.equal(spec.command, "C:\\Program Files\\nodejs\\node.exe");
+    assert.deepEqual(spec.args, [jsPath, "app-server", "--stdio"]);
+    assert.equal(spec.displayBin, jsPath);
+  }
+
+  // 3. Fallback to APPDATA\npm codex.js when PATH does not contain codex
+  {
+    const jsPath =
+      "C:\\Users\\Alice\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js";
+    const existing = new Set([jsPath]);
+    const spec = resolveCodexSpawnSpec(null, [], {
+      platform: "win32",
+      env: { PATH: "C:\\Windows\\System32", APPDATA: "C:\\Users\\Alice\\AppData\\Roaming" },
+      existsSync: (p) => existing.has(p),
+      execPath: "C:\\Program Files\\nodejs\\node.exe",
+    });
+    assert.equal(spec.command, "C:\\Program Files\\nodejs\\node.exe");
+    assert.deepEqual(spec.args, [jsPath, "app-server", "--stdio"]);
+  }
+
+  // 4. .cmd fallback with spaces in path and args uses outer-quoted /s /c + windowsVerbatimArguments
+  {
+    const cmdPath = "C:\\Program Files\\Custom Codex\\codex.cmd";
+    const existing = new Set([cmdPath]);
+    const spec = resolveCodexSpawnSpec(cmdPath, ["--profile", "my work"], {
+      platform: "win32",
+      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+      existsSync: (p) => existing.has(p),
+    });
+    assert.equal(spec.command, "C:\\Windows\\System32\\cmd.exe");
+    assert.deepEqual(spec.args, [
+      "/d",
+      "/s",
+      "/c",
+      '""C:\\Program Files\\Custom Codex\\codex.cmd" app-server --stdio --profile "my work""',
+    ]);
+    assert.equal(spec.windowsVerbatimArguments, true);
+    assert.equal(spec.displayBin, cmdPath);
+  }
+
+  // 5. Missing backslash CODEX_BIN throws immediately
+  assert.throws(
+    () =>
+      resolveCodexSpawnSpec("C:\\Missing\\codex.exe", [], {
+        platform: "win32",
+        env: {},
+        existsSync: () => false,
+      }),
+    /Configured CODEX_BIN path does not exist/
+  );
+
+  // 6. buildChildEnv preserves Windows PATH without ':' splitting
+  {
+    const winPath = "C:\\Program Files\\nodejs;C:\\Users\\Alice\\AppData\\Roaming\\npm";
+    const env = buildChildEnv(
+      { EXTRA_FLAG: "1" },
+      { platform: "win32", env: { PATH: winPath } }
+    );
+    assert.equal(env.PATH, winPath);
+    assert.equal(env.EXTRA_FLAG, "1");
+  }
+});

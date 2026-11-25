@@ -10,44 +10,62 @@ const DEFAULT_WAIT_TIMEOUT_MS = 45_000;
 const VALID_DECISIONS = new Set(["accept", "acceptForSession", "decline", "cancel"]);
 const HUMAN_COMMAND_DECISIONS = new Set(["accept", "decline", "cancel"]);
 
-function findWindowsCodexFromPath() {
-  const pathDirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
-  for (const dir of pathDirs) {
-    const exePath = path.join(dir, "codex.exe");
-    if (existsSync(exePath)) {
+function findWindowsCodexFromPath(env = process.env, fileExists = existsSync) {
+  const rawPath = env.PATH ?? env.Path ?? "";
+  const pathDirs = rawPath.split(path.win32.delimiter);
+  for (const rawDir of pathDirs) {
+    const dir = rawDir.trim().replace(/^"+|"+$/g, "");
+    if (!dir) continue;
+    const exePath = path.win32.join(dir, "codex.exe");
+    if (fileExists(exePath)) {
       return exePath;
     }
-    const cmdPath = path.join(dir, "codex.cmd");
-    if (existsSync(cmdPath)) {
-      const siblingJs = path.join(dir, "node_modules", "@openai", "codex", "bin", "codex.js");
-      return existsSync(siblingJs) ? siblingJs : cmdPath;
+    const cmdPath = path.win32.join(dir, "codex.cmd");
+    if (fileExists(cmdPath)) {
+      const siblingJs = path.win32.join(dir, "node_modules", "@openai", "codex", "bin", "codex.js");
+      return fileExists(siblingJs) ? siblingJs : cmdPath;
     }
   }
   return null;
 }
 
-function resolveCodexSpawnSpec(explicitBin, extraArgs = []) {
-  const envBin = explicitBin || process.env.CODEX_BIN;
+function quoteWindowsCmdArg(arg) {
+  const str = String(arg);
+  if (str.length > 0 && /^[a-zA-Z0-9_./:\\-]+$/.test(str)) {
+    return str;
+  }
+  const escaped = str.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, "$1$1");
+  return `"${escaped}"`;
+}
+
+export function resolveCodexSpawnSpec(explicitBin, extraArgs = [], runtime = {}) {
+  const platform = runtime.platform ?? process.platform;
+  const env = runtime.env ?? process.env;
+  const fileExists = runtime.existsSync ?? existsSync;
+  const execPath = runtime.execPath ?? process.execPath;
+  const envBin = explicitBin || env.CODEX_BIN;
   const appServerArgs = ["app-server", "--stdio", ...extraArgs];
   let bin = null;
 
   if (envBin) {
-    if (/[\\/]/.test(envBin) && !existsSync(envBin)) {
+    if (/[\\/]/.test(envBin) && !fileExists(envBin)) {
       throw new Error(`Configured CODEX_BIN path does not exist: ${envBin}`);
     }
     bin = envBin;
-  } else if (process.platform === "win32") {
-    const npmCodexJs = process.env.APPDATA
-      ? path.join(process.env.APPDATA, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
-      : null;
-    if (npmCodexJs && existsSync(npmCodexJs)) {
-      bin = npmCodexJs;
+  } else if (platform === "win32") {
+    const fromPath = findWindowsCodexFromPath(env, fileExists);
+    if (fromPath) {
+      bin = fromPath;
     } else {
-      bin = findWindowsCodexFromPath() || "codex";
+      const appData = env.APPDATA ?? env.AppData;
+      const npmCodexJs = appData
+        ? path.win32.join(appData, "npm", "node_modules", "@openai", "codex", "bin", "codex.js")
+        : null;
+      bin = npmCodexJs && fileExists(npmCodexJs) ? npmCodexJs : "codex";
     }
   } else {
     for (const candidate of ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]) {
-      if (existsSync(candidate)) {
+      if (fileExists(candidate)) {
         bin = candidate;
         break;
       }
@@ -55,20 +73,22 @@ function resolveCodexSpawnSpec(explicitBin, extraArgs = []) {
     if (!bin) bin = "codex";
   }
 
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     const lower = bin.toLowerCase();
     if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
       return {
-        command: process.execPath,
+        command: execPath,
         args: [bin, ...appServerArgs],
         displayBin: bin,
       };
     }
     if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
+      const commandLine = [bin, ...appServerArgs].map(quoteWindowsCmdArg).join(" ");
       return {
-        command: process.env.ComSpec || "cmd.exe",
-        args: ["/d", "/s", "/c", bin, ...appServerArgs],
+        command: env.ComSpec || env.COMSPEC || "cmd.exe",
+        args: ["/d", "/s", "/c", `"${commandLine}"`],
         displayBin: bin,
+        windowsVerbatimArguments: true,
       };
     }
   }
@@ -80,9 +100,11 @@ function resolveCodexSpawnSpec(explicitBin, extraArgs = []) {
   };
 }
 
-function buildChildEnv(extraEnv = {}) {
-  const env = { ...process.env, ...extraEnv };
-  if (process.platform === "win32") {
+export function buildChildEnv(extraEnv = {}, runtime = {}) {
+  const platform = runtime.platform ?? process.platform;
+  const baseEnv = runtime.env ?? process.env;
+  const env = { ...baseEnv, ...extraEnv };
+  if (platform === "win32") {
     return env;
   }
   const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin"];
@@ -403,6 +425,7 @@ export class CodexAppServerClient {
       stdio: ["pipe", "pipe", "pipe"],
       env: buildChildEnv(this.extraEnv),
       windowsHide: true,
+      ...(spec.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     });
 
     const conn = {
