@@ -8,11 +8,11 @@ import { createRequire, syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough, Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = path.resolve(__dirname, "..");
-const LAUNCHER = path.join(PLUGIN_DIR, "scripts", "codex-bridge-mcp");
+const SERVER_ENTRY = path.join(PLUGIN_DIR, "server", "index.mjs");
 
 test("connection isolation across delayed child exit and failed initialization", async () => {
   const childProcess = createRequire(import.meta.url)("node:child_process");
@@ -50,7 +50,7 @@ test("connection isolation across delayed child exit and failed initialization",
 
   try {
     const { CodexAppServerClient } = await import(
-      `${PLUGIN_DIR}/server/app-server-client.mjs?t=${Date.now()}`
+      `${pathToFileURL(path.join(PLUGIN_DIR, "server", "app-server-client.mjs")).href}?t=${Date.now()}`
     );
 
     const first = new CodexAppServerClient({ codexBin: "codex", idleShutdownMs: 0 });
@@ -81,8 +81,12 @@ test("connection isolation across delayed child exit and failed initialization",
 });
 
 test("CUA readiness check, fail-fast on broken cua_repl, fork inheritance, and approval safety", async () => {
-  const { CodexAppServerClient } = await import(`${PLUGIN_DIR}/server/app-server-client.mjs`);
-  const { executeTool } = await import(`${PLUGIN_DIR}/server/tools.mjs`);
+  const { CodexAppServerClient } = await import(
+    pathToFileURL(path.join(PLUGIN_DIR, "server", "app-server-client.mjs")).href
+  );
+  const { executeTool } = await import(
+    pathToFileURL(path.join(PLUGIN_DIR, "server", "tools.mjs")).href
+  );
 
   // Broken CUA catalog -> ready=false & fail-fast + unsubscribe
   {
@@ -209,9 +213,10 @@ test("MCP protocol negotiation, split Content-Length framing, and CLI guardrails
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function openMcp() {
-    const child = spawn("/bin/sh", [LAUNCHER, "--mcp"], {
+    const child = spawn(process.execPath, [SERVER_ENTRY, "--mcp"], {
       env: { ...process.env, CODEX_HOME: codexHome },
       stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
     });
     let out = "";
     let err = "";
